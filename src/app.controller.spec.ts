@@ -13,7 +13,7 @@ describe('AppController', () => {
 
     appController = app.get<AppController>(AppController);
   });
-
+// Test case to check if the getHello method returns "Hello World!"
   describe('root', () => {
     it('should return "Hello World!"', () => {
       expect(appController.getHello()).toBe('Hello World!');
