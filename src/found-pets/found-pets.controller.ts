@@ -11,6 +11,7 @@ export class FoundPetsController {
     return this.foundPetsService.findAllFoundPets();
   }
 
+  // Endpoint to create a new found pet report
   @Post()
   create(@Body() dto: CreateFoundPetDto) {
     return this.foundPetsService.create(dto);
