@@ -1,8 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { LostPet } from '../core/entities/lost-pet.entity';
 import { CreateLostPetDto } from './dto/create-lost-pet.dto';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 
 @Injectable()
 export class LostPetsService {
@@ -10,6 +12,8 @@ export class LostPetsService {
     @InjectRepository(LostPet)
     private readonly lostPetRepo: Repository<LostPet>,
     private readonly dataSource: DataSource,
+    @Inject(CACHE_MANAGER)
+    private readonly cacheManager: Cache,
   ) {}
 
   async create(dto: CreateLostPetDto): Promise<LostPet> {
@@ -43,11 +47,37 @@ export class LostPetsService {
       ],
     );
 
-    return result[0];
+    // Invalidar caché al crear
+    await this.cacheManager.del('lost_pets_active');
+
+    return result[0] as LostPet;
   }
 
-  async findNearby(lat: number, lng: number, radiusMeters = 500) {
-    return this.dataSource.query(
+  async findActiveLostPets(): Promise<LostPet[]> {
+    const cacheKey = 'lost_pets_active';
+
+    const cached = await this.cacheManager.get<LostPet[]>(cacheKey);
+    if (cached) {
+      console.log('✅ [CACHE HIT] lost_pets_active');
+      return cached;
+    }
+
+    console.log('🔍 [CACHE MISS] Consultando BD para lost_pets_active');
+    const pets = await this.dataSource.query(
+      `SELECT *,
+          ST_X(location::geometry) AS lng,
+          ST_Y(location::geometry) AS lat
+       FROM lost_pets
+       WHERE is_active = true
+       ORDER BY created_at DESC`,
+    );
+
+    await this.cacheManager.set(cacheKey, pets, 60000);
+    return pets as LostPet[];
+  }
+
+  async findNearby(lat: number, lng: number, radiusMeters = 500): Promise<LostPet[]> {
+    const result = await this.dataSource.query(
       `SELECT *,
           ST_X(location::geometry) AS lost_lng,
           ST_Y(location::geometry) AS lost_lat,
@@ -65,5 +95,7 @@ export class LostPetsService {
       ORDER BY distance ASC`,
       [lng, lat, radiusMeters],
     );
+
+    return result as LostPet[];
   }
 }
